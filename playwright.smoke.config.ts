@@ -26,6 +26,8 @@ export default defineConfig({
   timeout: 300_000,
   expect: { timeout: 30_000 },
   workers: 1,
+  // Flaky local connections (ECONNRESET) shouldn't fail the whole run; each attempt cleans up after itself.
+  retries: 1,
   reporter: [["list"]],
   use: { baseURL: process.env.SMOKE_BASE_URL ?? process.env.APP_URL ?? "https://homebase-iota-khaki.vercel.app", trace: "retain-on-failure" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],

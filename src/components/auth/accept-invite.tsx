@@ -37,7 +37,26 @@ export function AcceptInvite({ token, email, accountExists, signedInAs }: { toke
 
   if (signedInAs) {
     if (signedInAs.email !== email || signedInAs.role !== "tenant") {
-      return <Alert tone="warning">You&apos;re signed in as {signedInAs.email}. This invitation is for a different tenant account — sign out and open the link again.</Alert>;
+      return (
+        <div className="space-y-4">
+          <Alert tone="info" title="You're signed in with another account">
+            This browser is signed in as {signedInAs.email}. This invitation is for the tenant, so sign out here to continue (or open the link on the tenant&apos;s phone).
+          </Alert>
+          <Button
+            size="lg"
+            className="w-full"
+            loading={pending}
+            onClick={async () => {
+              setPending(true);
+              await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+              router.refresh();
+              setPending(false);
+            }}
+          >
+            Sign out and continue
+          </Button>
+        </div>
+      );
     }
     return (
       <div className="space-y-4">

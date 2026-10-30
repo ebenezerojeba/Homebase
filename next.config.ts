@@ -11,6 +11,10 @@ const securityHeaders = [
 
 const config: NextConfig = {
   poweredByHeader: false,
+  experimental: {
+    // Reuse recently visited pages for 30s on back/forward and sidebar navigation (mutations still refresh).
+    staleTimes: { dynamic: 30, static: 180 },
+  },
   reactStrictMode: true,
   serverExternalPackages: ["mongoose", "bcryptjs", "cloudinary"],
   images: { remotePatterns: [{ protocol: "https", hostname: "res.cloudinary.com" }] },

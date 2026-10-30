@@ -15,6 +15,7 @@ export function NewRequestForm({ tenancies, base }: { tenancies: { id: string; l
   const router = useRouter();
   const [tenancyId, setTenancyId] = useState(tenancies[0]?.id ?? "");
   const [photos, setPhotos] = useState<UploadedFile[]>([]);
+  const [uploading, setUploading] = useState(false);
   const a = useAction((body: unknown) => api<{ requestId: string }>("/api/maintenance", { body }), {
     success: "Request sent to your landlord",
     onSuccess: (r) => router.push(`${base}/${r.requestId}`),
@@ -46,9 +47,9 @@ export function NewRequestForm({ tenancies, base }: { tenancies: { id: string; l
         </Field>
       </div>
       <Field label="Details" hint="Where is it, when did it start, what have you tried?" error={a.fieldErrors.description} required>{(p) => <Textarea {...p} name="description" rows={5} />}</Field>
-      {tenancyId ? <FileUpload kind="maintenance_photo" tenancyId={tenancyId} accept="image/jpeg,image/png,image/webp" label="Add photos" hint="JPG, PNG or WebP · up to 8 MB each" max={6} onChange={setPhotos} /> : null}
+      {tenancyId ? <FileUpload kind="maintenance_photo" tenancyId={tenancyId} accept="image/jpeg,image/png,image/webp" label="Add photos" hint="JPG, PNG or WebP · up to 8 MB each" max={6} onChange={setPhotos} onBusyChange={setUploading} /> : null}
       <FormError message={a.error} />
-      <Button type="submit" loading={a.pending}>Submit request</Button>
+      <Button type="submit" loading={a.pending} disabled={uploading}>{uploading ? "Uploading…" : "Submit request"}</Button>
     </form>
   );
 }
@@ -96,6 +97,7 @@ export function LandlordUpdateForm({ requestId, current }: { requestId: string; 
 export function CommentForm({ requestId, tenancyId, allowInternal }: { requestId: string; tenancyId: string; allowInternal: boolean }) {
   const [internal, setInternal] = useState(false);
   const [photos, setPhotos] = useState<UploadedFile[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [key, setKey] = useState(0);
   const a = useAction((body: unknown) => api(`/api/maintenance/${requestId}/comment`, { body }), {
     success: internal ? "Internal note saved" : "Comment posted",
@@ -114,9 +116,9 @@ export function CommentForm({ requestId, tenancyId, allowInternal }: { requestId
       }}
     >
       <Field label={internal ? "Internal note (only you can see this)" : "Add a comment"} error={a.fieldErrors.body}>{(p) => <Textarea {...p} name="body" rows={3} className={internal ? "bg-amber-50" : undefined} />}</Field>
-      {!internal ? <FileUpload kind="maintenance_photo" tenancyId={tenancyId} accept="image/jpeg,image/png,image/webp" label="Add photos" max={4} onChange={setPhotos} /> : null}
+      {!internal ? <FileUpload kind="maintenance_photo" tenancyId={tenancyId} accept="image/jpeg,image/png,image/webp" label="Add photos" max={4} onChange={setPhotos} onBusyChange={setUploading} /> : null}
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" loading={a.pending}>{internal ? "Save note" : "Post"}</Button>
+        <Button type="submit" loading={a.pending} disabled={uploading}>{uploading ? "Uploading…" : internal ? "Save note" : "Post"}</Button>
         {allowInternal ? <Checkbox checked={internal} onChange={(e) => setInternal(e.target.checked)} label="Internal note (hidden from tenant)" /> : null}
       </div>
       <FormError message={a.error} />

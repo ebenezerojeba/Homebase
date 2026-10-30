@@ -4,6 +4,7 @@ import { z } from "zod";
 import { addDays, diffDays, parseISODate, toISODate, todayInBusinessTz } from "@/lib/dates";
 import { env } from "@/lib/env";
 import { errors, isDuplicateKeyError } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 import { formatKobo } from "@/lib/money";
 import { label } from "@/lib/nigeria";
 import { email, isoDate, koboAmount, objectId, password, personName, shortText } from "@/lib/validation";
@@ -160,7 +161,12 @@ export async function createTenancy(actor: Actor, input: z.infer<typeof createTe
 
 /* ---------------- Invitations ---------------- */
 
-export async function createInvitation(actor: Actor, tenancyId: string) {
+/**
+ * Create a fresh single-use invitation (revoking any earlier link) and, unless `sendEmail` is false,
+ * email it. The link is also returned to the landlord so it can be shared directly (WhatsApp, SMS),
+ * which keeps onboarding working even when an email is delayed or filtered as spam.
+ */
+export async function createInvitation(actor: Actor, tenancyId: string, opts: { sendEmail?: boolean } = {}) {
   const t = await getLandlordTenancy(actor, tenancyId);
   if (t.tenantId) throw errors.conflict("A tenant has already joined this tenancy");
   if (t.status !== "active") throw errors.conflict("Only active tenancies can have invitations");
@@ -201,18 +207,37 @@ export async function createInvitation(actor: Actor, tenancyId: string) {
     );
   });
   const url = `${env().APP_URL}/invite/${encodeURIComponent(token)}`;
-  const { text, html } = renderEmail({
-    heading: `${actor.name} invited you to ${env().APP_NAME}`,
-    paragraphs: [
-      `Hello ${t.tenantName},`,
-      `${actor.name} has set up your tenancy at ${property?.name ?? "their property"} on ${env().APP_NAME}. You'll be able to review the agreed terms, see due dates, pay rent, get receipts and report repairs.`,
-      `Please review the terms carefully before accepting. This invitation expires in ${INVITE_TTL_DAYS} days and can be used once.`,
-    ],
-    cta: { label: "Review invitation", url },
-  });
-  await emailProvider().send({ to: { email: t.tenantEmail, name: t.tenantName }, subject: `Your tenancy invitation from ${actor.name}`, text, html });
-  await audit(actor, "invitation.sent", "Tenancy", t._id.toString());
-  return { sent: true, expiresInDays: INVITE_TTL_DAYS, devUrl: process.env.NODE_ENV !== "production" ? url : undefined };
+  const expiresAt = new Date(now.getTime() + INVITE_TTL_DAYS * 86400_000);
+  let emailed = false;
+  if (opts.sendEmail !== false) {
+    const landlordEmail = (await User.findById(actor.userId).select("email").lean())?.email;
+    const { text, html } = renderEmail({
+      heading: `Your tenancy at ${property?.name ?? "your new home"}`,
+      paragraphs: [
+        `Hello ${t.tenantName},`,
+        `${actor.name} has recorded your tenancy at ${property?.name ?? "their property"} on ${env().APP_NAME}, where you can see your rent schedule, pay, get receipts and report repairs.`,
+        `Please review the terms before you accept. This link works once and expires in ${INVITE_TTL_DAYS} days.`,
+      ],
+      cta: { label: "Review my tenancy", url },
+      footerNote: `You received this because ${actor.name} added your email to a tenancy. If you weren't expecting it, you can ignore this email.`,
+    });
+    try {
+      await emailProvider().send({
+        to: { email: t.tenantEmail, name: t.tenantName },
+        subject: `${actor.name} shared your tenancy details`,
+        text,
+        html,
+        fromName: `${actor.name} via ${env().APP_NAME}`,
+        replyTo: landlordEmail ? { email: landlordEmail, name: actor.name } : undefined,
+      });
+      emailed = true;
+    } catch (e) {
+      // The landlord still gets the link to share directly; don't fail the whole action.
+      logger.warn("invitation_email_failed", { tenancyId: t._id.toString(), error: e });
+    }
+  }
+  await audit(actor, "invitation.sent", "Tenancy", t._id.toString(), { emailed });
+  return { emailed, url, expiresAt, expiresInDays: INVITE_TTL_DAYS };
 }
 
 export async function revokeInvitation(actor: Actor, tenancyId: string) {

@@ -21,10 +21,12 @@ interface Props {
   label?: string;
   hint?: string;
   onChange: (files: UploadedFile[]) => void;
+  /** True while a file is uploading, so forms can hold their submit button until attachments are saved. */
+  onBusyChange?: (busy: boolean) => void;
 }
 
 /** Uploads with progress via XHR. The server re-validates type, size and content; `accept` is only a hint. */
-export function FileUpload({ kind, tenancyId, propertyId, replacesAssetId, accept = "image/jpeg,image/png,image/webp,application/pdf", multiple, max = 4, label = "Attach files", hint, onChange }: Props) {
+export function FileUpload({ kind, tenancyId, propertyId, replacesAssetId, accept = "image/jpeg,image/png,image/webp,application/pdf", multiple, max = 4, label = "Attach files", hint, onChange, onBusyChange }: Props) {
   const inputId = useId();
   const ref = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<UploadedFile[]>([]);
@@ -59,6 +61,7 @@ export function FileUpload({ kind, tenancyId, propertyId, replacesAssetId, accep
 
   async function onPick(list: FileList | null) {
     if (!list?.length) return;
+    onBusyChange?.(true);
     setError(null);
     const picked = Array.from(list).slice(0, Math.max(0, max - files.length));
     let next = files;
@@ -77,6 +80,7 @@ export function FileUpload({ kind, tenancyId, propertyId, replacesAssetId, accep
       }
     }
     setProgress(null);
+    onBusyChange?.(false);
     if (ref.current) ref.current.value = "";
   }
 

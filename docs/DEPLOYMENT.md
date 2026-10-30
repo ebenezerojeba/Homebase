@@ -10,6 +10,9 @@ Integrations are disabled or sandboxed until configured. Nothing below has been 
 4. `MONGODB_URI=mongodb+srv://...`, `MONGODB_DB=homebase`.
 5. After the first deploy (and any deploy that changes indexes): `npm run db:indexes` with production env vars (from a trusted machine).
 
+### Region (important for speed)
+Put the Vercel functions in the same region as the Atlas cluster: every page makes several database calls, and a cross-continent hop adds ~100 ms to each. This project's cluster is AWS `eu-west-3` (Paris), so `vercel.json` sets `"regions": ["cdg1"]`. If you move the cluster, change the region to match (e.g. Frankfurt `eu-central-1` → `fra1`, Ireland `eu-west-1` → `dub1`).
+
 ## 2. Environment variables (Vercel → Settings → Environment Variables)
 
 Use separate values for Preview and Production. Required in production:
@@ -61,6 +64,13 @@ Set `EMAIL_PROVIDER=smtp` and `SMTP_URL`:
 - For a custom domain, set up SPF, DKIM and DMARC at your DNS provider to keep mail out of spam.
 
 Test: request a password reset for your own account and check it arrives.
+
+**Keeping email out of spam.** A personal Gmail account sending links to a `*.vercel.app` address is the most common reason app emails land in spam (and Gmail disables links inside spam). For production:
+1. Put the app on your own domain (Vercel → Project → Domains, e.g. `app.yourdomain.com`; add the CNAME it shows at your DNS provider) and update `APP_URL`.
+2. Send from an address on that domain through a transactional provider that signs mail for it (Brevo, Resend, Zoho ZeptoMail, Amazon SES…): add the SPF, DKIM and DMARC records the provider gives you, then set `SMTP_URL` (or `EMAIL_PROVIDER=brevo`) and `EMAIL_FROM_ADDRESS=no-reply@yourdomain.com`.
+3. Landlords can always use **Get link to share** on a tenancy to send the invitation by WhatsApp/SMS instead of relying on email.
+
+The app already sends plain transactional mail: text + HTML versions, the landlord as Reply-To on invitations, a visible copyable link, and one-click `List-Unsubscribe` headers on notification emails.
 
 ## 5b. SMS and WhatsApp (optional, off by default)
 

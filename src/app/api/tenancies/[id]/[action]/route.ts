@@ -26,8 +26,10 @@ export const POST = authed<P>({ roles: ["landlord"], requireVerifiedEmail: true 
     case "invite": {
       const { rateLimit } = await import("@/server/auth/rate-limit");
       await rateLimit(RULES.invite, actor.userId);
-      const r = await createInvitation(actor, params.id);
-      return { sent: r.sent, expiresInDays: r.expiresInDays };
+      const { sendEmail } = await parseJson(req, z.object({ sendEmail: z.boolean().default(true) })).catch(() => ({ sendEmail: true }));
+      const r = await createInvitation(actor, params.id, { sendEmail });
+      // The link goes only to the landlord who owns the tenancy (checked in createInvitation).
+      return { emailed: r.emailed, url: r.url, expiresAt: r.expiresAt, expiresInDays: r.expiresInDays };
     }
     case "revoke-invite":
       await revokeInvitation(actor, params.id);
@@ -64,4 +66,3 @@ export const GET = authed<P>({}, async ({ req, actor, params }) => {
 });
 
 export const dynamic = "force-dynamic";
-void z;

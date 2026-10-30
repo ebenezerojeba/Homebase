@@ -116,14 +116,75 @@ export function TenancyForm({ units, defaultUnitId, today }: { units: { id: stri
   );
 }
 
-export function InviteButton({ tenancyId, resend }: { tenancyId: string; resend?: boolean }) {
-  const a = useAction(() => api(`/api/tenancies/${tenancyId}/invite`, { method: "POST" }), { success: "Invitation sent" });
+type InviteResult = { emailed: boolean; url: string; expiresAt: string };
+
+/**
+ * Invite controls for a tenancy whose tenant hasn't joined. Landlords can email the invitation
+ * and/or share the link directly (WhatsApp, SMS, copy) — important when email lands in spam.
+ * Each action issues a fresh single-use link and revokes the previous one.
+ */
+export function InviteButton({ tenancyId, resend, tenantName }: { tenancyId: string; resend?: boolean; tenantName?: string }) {
+  const [link, setLink] = useState<InviteResult | null>(null);
+  const [copied, setCopied] = useState(false);
+  const email = useAction(() => api<InviteResult>(`/api/tenancies/${tenancyId}/invite`, { body: { sendEmail: true } }), {
+    onSuccess: (r) => setLink(r),
+  });
+  const share = useAction(() => api<InviteResult>(`/api/tenancies/${tenancyId}/invite`, { body: { sendEmail: false } }), {
+    onSuccess: (r) => setLink(r),
+  });
+  const message = link
+    ? `Hello${tenantName ? ` ${tenantName.split(" ")[0]}` : ""}, I've set up our tenancy on Homebase so you can see your rent schedule, pay and get receipts. Please review and accept here (the link works once): ${link.url}`
+    : "";
   return (
     <>
-      <Button variant={resend ? "outline" : "primary"} loading={a.pending} onClick={() => a.run()}>
-        {resend ? "Resend invitation" : "Invite tenant"}
+      <Button variant={resend ? "outline" : "primary"} loading={email.pending} onClick={() => email.run()}>
+        {resend ? "Resend email" : "Email invitation"}
       </Button>
-      {a.error ? <span className="text-xs text-rose-700" role="alert">{a.error}</span> : null}
+      <Button variant="outline" loading={share.pending} onClick={() => share.run()}>
+        Get link to share
+      </Button>
+      {email.error || share.error ? <span className="text-xs text-rose-700" role="alert">{email.error ?? share.error}</span> : null}
+      <Dialog
+        open={Boolean(link)}
+        onOpenChange={(o) => {
+          if (!o) {
+            setLink(null);
+            setCopied(false);
+          }
+        }}
+        title="Invitation link ready"
+        description={
+          link?.emailed
+            ? "We emailed this to your tenant. If it doesn't arrive (or lands in spam), send the same link on WhatsApp or SMS."
+            : "Send this link to your tenant. It works once and replaces any earlier invitation link."
+        }
+      >
+        {link ? (
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Input readOnly value={link.url} aria-label="Invitation link" onFocus={(e) => e.currentTarget.select()} className="font-mono text-xs" />
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(link.url).catch(() => {});
+                  setCopied(true);
+                }}
+              >
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <a className="inline-flex h-11 items-center justify-center rounded-xl bg-[#1FAF5A] px-4 text-sm font-semibold text-white hover:bg-[#1a9a4f]" href={`https://wa.me/?text=${encodeURIComponent(message)}`} target="_blank" rel="noopener noreferrer">
+                Share on WhatsApp
+              </a>
+              <a className="inline-flex h-11 items-center justify-center rounded-xl border border-cream-300 bg-white px-4 text-sm font-semibold text-ink-800 hover:bg-cream-50" href={`sms:?&body=${encodeURIComponent(message)}`}>
+                Send by SMS
+              </a>
+            </div>
+            <p className="text-xs text-ink-500">Expires {new Date(link.expiresAt).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}. Your tenant signs up with the email you entered for them.</p>
+          </div>
+        ) : null}
+      </Dialog>
     </>
   );
 }

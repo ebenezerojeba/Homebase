@@ -44,6 +44,7 @@ export function Chat({ conversationId, otherName }: { conversationId: string; ot
   const [older, setOlder] = useState<{ hasMore: boolean; before: string | null }>({ hasMore: false, before: null });
   const [text, setText] = useState("");
   const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [uploadKey, setUploadKey] = useState(0);
   const bottom = useRef<HTMLDivElement>(null);
 
@@ -183,7 +184,7 @@ export function Chat({ conversationId, otherName }: { conversationId: string; ot
         onSubmit={(e) => {
           e.preventDefault();
           const body = text.trim();
-          if (!body && files.length === 0) return;
+          if (uploading || (!body && files.length === 0)) return;
           const clientId = `c${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
           void send(body, files.map((f) => f.id), clientId);
           setText("");
@@ -191,7 +192,7 @@ export function Chat({ conversationId, otherName }: { conversationId: string; ot
           setUploadKey((k) => k + 1);
         }}
       >
-        {tenancyId ? <FileUpload key={uploadKey} kind="message_attachment" tenancyId={tenancyId} max={4} label="Attach" hint="Photo or PDF · 8 MB" onChange={setFiles} /> : null}
+        {tenancyId ? <FileUpload key={uploadKey} kind="message_attachment" tenancyId={tenancyId} max={4} label="Attach" hint="Photo or PDF · 8 MB" onChange={setFiles} onBusyChange={setUploading} /> : null}
         <div className="flex items-end gap-2">
           <label htmlFor="msg" className="sr-only">Message</label>
           <textarea
@@ -209,7 +210,7 @@ export function Chat({ conversationId, otherName }: { conversationId: string; ot
             placeholder="Write a message…"
             className="max-h-32 min-h-11 flex-1 resize-none rounded-xl border border-cream-300 px-3.5 py-2.5 text-sm focus:border-emerald-600 focus:outline-none focus:ring-3 focus:ring-emerald-600/15"
           />
-          <Button type="submit" aria-label="Send" className="h-11 w-11 px-0" disabled={!text.trim() && files.length === 0}>
+          <Button type="submit" aria-label="Send" className="h-11 w-11 px-0" disabled={uploading || (!text.trim() && files.length === 0)}>
             <Send className="size-4" />
           </Button>
         </div>

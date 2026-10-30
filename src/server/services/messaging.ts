@@ -51,9 +51,36 @@ export async function listConversations(actor: Actor) {
   }));
 }
 
-export async function totalUnreadMessages(actor: Actor) {
-  const list = await listConversations(actor);
-  return list.reduce((s, c) => s + c.unread, 0);
+/** Unread messages across all of the actor's conversations in one round trip (used on every page). */
+export async function totalUnreadMessages(actor: Actor): Promise<number> {
+  await connectDb();
+  const me = new ObjectId(actor.userId);
+  const [row] = await Conversation.aggregate<{ n: number }>([
+    { $match: { participantIds: me, lastMessageAt: { $ne: null } } },
+    {
+      $project: {
+        lastRead: {
+          $ifNull: [{ $first: { $map: { input: { $filter: { input: "$readState", cond: { $eq: ["$$this.userId", me] } } }, in: "$$this.lastReadAt" } } }, new Date(0)],
+        },
+        lastMessageAt: 1,
+      },
+    },
+    // Skip conversations with nothing new before touching the messages collection.
+    { $match: { $expr: { $gt: ["$lastMessageAt", "$lastRead"] } } },
+    {
+      $lookup: {
+        from: "messages",
+        let: { c: "$_id", r: "$lastRead" },
+        pipeline: [
+          { $match: { $expr: { $and: [{ $eq: ["$conversationId", "$$c"] }, { $gt: ["$createdAt", "$$r"] }, { $ne: ["$senderId", me] }] } } },
+          { $count: "n" },
+        ],
+        as: "u",
+      },
+    },
+    { $group: { _id: null, n: { $sum: { $ifNull: [{ $first: "$u.n" }, 0] } } } },
+  ]);
+  return row?.n ?? 0;
 }
 
 export const messagesQuery = z.object({ before: z.string().datetime().optional(), limit: z.coerce.number().int().min(1).max(100).default(30) });

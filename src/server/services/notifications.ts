@@ -7,6 +7,7 @@ import { connectDb } from "@/server/db";
 import { Notification, User, type DeliveryChannel, type NotificationType } from "@/server/models";
 import { enabledTextChannels, ProviderSendError, textProvider, type TextChannel } from "@/server/providers/text";
 import { emailProvider, renderEmail } from "@/server/providers/email";
+import { canUnsubscribe, unsubscribeLinks } from "./unsubscribe";
 import type { Actor } from "@/server/auth/actor";
 
 export const MAX_EMAIL_ATTEMPTS = 5;
@@ -156,8 +157,15 @@ export async function flushChannel(
     try {
       let id: string | null;
       if (channel === "email") {
-        const { text, html } = renderEmail({ heading: n.title, paragraphs: [n.body], cta: url ? { label: "Open in " + env().APP_NAME, url } : undefined });
-        id = (await emailProvider().send({ to: { email: user.email, name: user.name }, subject: n.title, text, html })).id;
+        const unsub = canUnsubscribe(n.type) ? unsubscribeLinks(user._id.toString(), n.type) : null;
+        const { text, html } = renderEmail({
+          heading: n.title,
+          paragraphs: [n.body],
+          cta: url ? { label: "Open in " + env().APP_NAME, url } : undefined,
+          unsubscribeUrl: unsub?.page,
+        });
+        const headers = unsub ? { "List-Unsubscribe": `<${unsub.oneClick}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } : undefined;
+        id = (await emailProvider().send({ to: { email: user.email, name: user.name }, subject: n.title, text, html, headers })).id;
       } else {
         id = (await textProv!.sendNotification(user.phone!, { title: n.title, body: n.body, url })).id;
       }

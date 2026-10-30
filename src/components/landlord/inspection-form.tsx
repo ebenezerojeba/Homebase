@@ -14,6 +14,7 @@ const DEFAULT_AREAS = ["Living room", "Kitchen", "Bedroom(s)", "Bathroom(s)", "D
 export function InspectionDialog({ tenancyId }: { tenancyId: string }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Item[]>(DEFAULT_AREAS.map((area, i) => ({ key: i, area, condition: "good", notes: "", assetIds: [] })));
+  const [uploading, setUploading] = useState(0);
   const a = useAction((body: unknown) => api("/api/inspections", { body }), { success: "Inspection recorded", onSuccess: () => setOpen(false) });
   const update = (key: number, patch: Partial<Item>) => setItems((xs) => xs.map((x) => (x.key === key ? { ...x, ...patch } : x)));
   return (
@@ -62,7 +63,7 @@ export function InspectionDialog({ tenancyId }: { tenancyId: string }) {
               </div>
               <Input className="mt-2" aria-label={`Notes for ${it.area}`} placeholder="Notes (optional)" value={it.notes} onChange={(e) => update(it.key, { notes: e.target.value })} />
               <div className="mt-2">
-                <FileUpload kind="inspection_photo" tenancyId={tenancyId} accept="image/jpeg,image/png,image/webp" label="Add photos" hint="Dated automatically" max={8} onChange={(f) => update(it.key, { assetIds: f.map((x) => x.id) })} />
+                <FileUpload kind="inspection_photo" tenancyId={tenancyId} accept="image/jpeg,image/png,image/webp" label="Add photos" hint="Dated automatically" max={8} onChange={(f) => update(it.key, { assetIds: f.map((x) => x.id) })} onBusyChange={(b) => setUploading((n) => Math.max(0, n + (b ? 1 : -1)))} />
               </div>
             </li>
           ))}
@@ -73,7 +74,7 @@ export function InspectionDialog({ tenancyId }: { tenancyId: string }) {
         <Field label="Overall summary (optional)">{(p) => <Textarea {...p} name="summary" />}</Field>
         {a.fieldErrors.items ? <p className="text-xs text-rose-700">{a.fieldErrors.items[0]}</p> : null}
         <FormError message={a.error} />
-        <Button type="submit" loading={a.pending}>Save and share with tenant</Button>
+        <Button type="submit" loading={a.pending} disabled={uploading > 0}>{uploading > 0 ? "Uploading photos…" : "Save and share with tenant"}</Button>
       </form>
     </Dialog>
   );

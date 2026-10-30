@@ -78,7 +78,7 @@ export default async function LandlordTenancyPage({ params, searchParams }: { pa
                 : `No active invitation for ${t.tenantEmail}.`}{" "}
               You can still record payments; they&apos;ll appear for the tenant once they join.
             </span>
-            <InviteButton tenancyId={id} resend={invitation?.status === "pending"} />
+            <InviteButton tenancyId={id} resend={invitation?.status === "pending"} tenantName={t.tenantName} />
           </div>
         </Alert>
       ) : null}

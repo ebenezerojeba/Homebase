@@ -1,10 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
-import { createHash, randomBytes } from "node:crypto";
+
 import dns from "node:dns";
 import os from "node:os";
 import path from "node:path";
 import mongoose from "mongoose";
-import bcrypt from "bcryptjs";
 import { v2 as cloudinary } from "cloudinary";
 
 /**
@@ -123,8 +122,9 @@ test("live site: full landlord and tenant journey", async ({ browser }) => {
   if (UPLOADS) {
     await landlord.locator('input[type="file"]').setInputFiles({ name: "front.png", mimeType: "image/png", buffer: PNG });
     await expect(landlord.locator('img[alt="front.png"]')).toBeVisible({ timeout: 60_000 });
-    const img = await landlord.locator('img[alt="front.png"]').evaluate((el: HTMLImageElement) => el.naturalWidth);
-    expect(img).toBeGreaterThan(0); // served from Cloudinary via the authorised asset route
+    // Served from Cloudinary via the authorised asset route; wait for the (lazy) image to finish loading.
+    await landlord.locator('img[alt="front.png"]').scrollIntoViewIfNeeded();
+    await expect.poll(() => landlord.locator('img[alt="front.png"]').evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth), { timeout: 30_000 }).toBeGreaterThan(0);
   }
   await landlord.getByRole("button", { name: "Add unit" }).click();
   await landlord.getByLabel(/^Unit name/).fill("Flat 1");
@@ -144,11 +144,21 @@ test("live site: full landlord and tenant journey", async ({ browser }) => {
   await expect(landlord.getByText("Invitation sent to")).toBeVisible();
   const tenancyId = landlord.url().split("/").pop()!.split("?")[0]!;
 
-  // 4. Tenant joins via an invitation link (token created here, same as the emailed one).
-  const token = randomBytes(32).toString("base64url");
-  await db.collection("invitations").updateMany({ tenancyId: new mongoose.Types.ObjectId(tenancyId), status: "pending" }, { $set: { tokenHash: createHash("sha256").update(token).digest("hex") } });
+  // 4. Landlord gets a shareable link from the tenancy page (the WhatsApp/SMS path) and the tenant opens it.
+  await landlord.getByRole("button", { name: "Get link to share" }).click();
+  const linkBox = landlord.getByRole("textbox", { name: "Invitation link" });
+  await expect(linkBox).toBeVisible();
+  const inviteUrl = await linkBox.inputValue();
+  expect(inviteUrl).toMatch(/\/invite\/[\w%-]+$/);
+  await expect(landlord.getByRole("link", { name: "Share on WhatsApp" })).toHaveAttribute("href", /wa\.me/);
+  await landlord.keyboard.press("Escape");
+  // Opening the tenant's link in the landlord's own browser offers "Sign out and continue" instead of a dead end.
+  const sameBrowser = await landlord.context().newPage();
+  await sameBrowser.goto(inviteUrl);
+  await expect(sameBrowser.getByRole("button", { name: "Sign out and continue" })).toBeVisible();
+  await sameBrowser.close();
   const tenant = await (await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })).newPage();
-  await settle(tenant, `/invite/${token}`);
+  await settle(tenant, new URL(inviteUrl).pathname);
   await expect(tenant.getByText("₦100.00").first()).toBeVisible();
   await tenant.getByLabel(/^Full name/).fill(TENANT.name);
   await tenant.getByLabel(/^Password/).fill(TENANT.password);
@@ -165,7 +175,7 @@ test("live site: full landlord and tenant journey", async ({ browser }) => {
   await tenant.getByLabel(/Transfer reference/).fill(`SMOKE${run}`.toUpperCase());
   if (UPLOADS) {
     await tenant.locator('input[type="file"]').setInputFiles({ name: "proof.png", mimeType: "image/png", buffer: PNG });
-    await expect(tenant.getByText("proof.png")).toBeVisible({ timeout: 60_000 });
+    await expect(tenant.getByRole("button", { name: "Remove proof.png" })).toBeVisible({ timeout: 60_000 }); // upload finished
   }
   await tenant.getByRole("button", { name: "Send for confirmation" }).click();
   await expect(tenant.getByText("Sent to your landlord for confirmation")).toBeVisible();

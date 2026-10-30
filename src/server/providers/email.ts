@@ -10,6 +10,10 @@ export interface EmailMessage {
   subject: string;
   text: string;
   html: string;
+  /** Display name override, e.g. "Chidi Okafor via Homebase" (address stays EMAIL_FROM_ADDRESS). */
+  fromName?: string;
+  replyTo?: { email: string; name?: string };
+  headers?: Record<string, string>;
 }
 
 export interface EmailProvider {
@@ -26,8 +30,10 @@ class BrevoEmail implements EmailProvider {
       method: "POST",
       headers: { "api-key": this.apiKey, "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({
-        sender: { email: e.EMAIL_FROM_ADDRESS, name: e.EMAIL_FROM_NAME },
+        sender: { email: e.EMAIL_FROM_ADDRESS, name: msg.fromName ?? e.EMAIL_FROM_NAME },
         to: [{ email: msg.to.email, name: msg.to.name }],
+        replyTo: msg.replyTo,
+        headers: msg.headers,
         subject: msg.subject,
         htmlContent: msg.html,
         textContent: msg.text,
@@ -57,8 +63,10 @@ class SmtpEmail implements EmailProvider {
   async send(msg: EmailMessage) {
     const e = env();
     const info = await this.transport.sendMail({
-      from: { name: e.EMAIL_FROM_NAME, address: e.EMAIL_FROM_ADDRESS },
+      from: { name: msg.fromName ?? e.EMAIL_FROM_NAME, address: e.EMAIL_FROM_ADDRESS },
       to: msg.to.name ? { name: msg.to.name, address: msg.to.email } : msg.to.email,
+      replyTo: msg.replyTo ? { name: msg.replyTo.name ?? "", address: msg.replyTo.email } : undefined,
+      headers: msg.headers,
       subject: msg.subject,
       text: msg.text,
       html: msg.html,
@@ -122,19 +130,47 @@ function escapeHtml(s: string): string {
 }
 
 /** Plain, respectful transactional template. All dynamic text is escaped. */
-export function renderEmail(opts: { heading: string; paragraphs: string[]; cta?: { label: string; url: string } }) {
+/**
+ * Plain, transactional template (no images, no tracking). All dynamic text is escaped.
+ * The link is also printed as text: mail clients disable buttons in suspected spam, but a visible
+ * URL can still be copied.
+ */
+export function renderEmail(opts: {
+  heading: string;
+  paragraphs: string[];
+  cta?: { label: string; url: string };
+  footerNote?: string;
+  unsubscribeUrl?: string;
+}) {
   const app = env().APP_NAME;
-  const text = [opts.heading, "", ...opts.paragraphs, ...(opts.cta ? ["", `${opts.cta.label}: ${opts.cta.url}`] : []), "", `— ${app}`].join("\n");
-  const html = `<!doctype html><html><body style="margin:0;background:#F4F6F5;font-family:Inter,Segoe UI,Arial,sans-serif;color:#0B1F3A">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 16px">
-<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #DBE1DE;border-radius:16px">
-<tr><td style="padding:28px 32px">
-<p style="margin:0 0 20px;font-weight:800;color:#0B1F3A;font-size:20px;letter-spacing:-0.5px">${escapeHtml(app.toLowerCase())}<span style="display:inline-block;width:8px;height:8px;margin-left:3px;border-radius:2px;background:#12A58B"></span></p>
-<h1 style="margin:0 0 16px;font-size:20px;line-height:1.3">${escapeHtml(opts.heading)}</h1>
-${opts.paragraphs.map((p) => `<p style="margin:0 0 12px;font-size:15px;line-height:1.6">${escapeHtml(p)}</p>`).join("")}
-${opts.cta ? `<p style="margin:24px 0 8px"><a href="${escapeHtml(opts.cta.url)}" style="display:inline-block;background:#0B1F3A;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:600">${escapeHtml(opts.cta.label)}</a></p>` : ""}
+  const footer = opts.footerNote ?? `You're receiving this because you have an ${app} account.`;
+  const text = [
+    opts.heading,
+    "",
+    ...opts.paragraphs,
+    ...(opts.cta ? ["", `${opts.cta.label}:`, opts.cta.url] : []),
+    "",
+    "—",
+    app,
+    footer,
+    ...(opts.unsubscribeUrl ? [`Stop these emails: ${opts.unsubscribeUrl}`] : []),
+  ].join("\n");
+  const btn = opts.cta
+    ? `<p style="margin:24px 0 12px"><a href="${escapeHtml(opts.cta.url)}" style="display:inline-block;background:#0B1F3A;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:600;font-size:15px">${escapeHtml(opts.cta.label)}</a></p>
+<p style="margin:0 0 4px;font-size:13px;color:#475A72">Button not working? Copy this link into your browser:</p>
+<p style="margin:0;font-size:13px;word-break:break-all"><a href="${escapeHtml(opts.cta.url)}" style="color:#0D7A66">${escapeHtml(opts.cta.url)}</a></p>`
+    : "";
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(opts.heading)}</title></head>
+<body style="margin:0;padding:0;background:#F4F6F5;font-family:Arial,Helvetica,sans-serif;color:#0B1F3A">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:28px 12px">
+<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border:1px solid #DBE1DE;border-radius:12px">
+<tr><td style="padding:28px">
+<p style="margin:0 0 18px;font-weight:700;font-size:18px;color:#0B1F3A">${escapeHtml(app.toLowerCase())}</p>
+<h1 style="margin:0 0 14px;font-size:20px;line-height:1.3;font-weight:700">${escapeHtml(opts.heading)}</h1>
+${opts.paragraphs.map((p) => `<p style="margin:0 0 12px;font-size:15px;line-height:1.6">${escapeHtml(p)}</p>`).join("\n")}
+${btn}
 </td></tr></table>
-<p style="font-size:12px;color:#6b7280;margin:16px 0 0">You received this because you have an account on ${escapeHtml(app)}. Manage email preferences in your settings.</p>
+<p style="max-width:560px;font-size:12px;line-height:1.5;color:#67788D;margin:14px 0 0">${escapeHtml(footer)}${opts.unsubscribeUrl ? ` <a href="${escapeHtml(opts.unsubscribeUrl)}" style="color:#67788D">Stop these emails</a>.` : ""}</p>
 </td></tr></table></body></html>`;
   return { text, html };
 }

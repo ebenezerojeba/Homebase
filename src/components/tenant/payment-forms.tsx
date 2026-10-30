@@ -80,6 +80,7 @@ export function ReportPaymentDialog({ tenancyId, charges }: { tenancyId: string;
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState<number | null>(null);
   const [proof, setProof] = useState<UploadedFile[]>([]);
+  const [uploading, setUploading] = useState(false);
   const a = useAction((body: unknown) => api("/api/payments", { body }), { success: "Sent to your landlord for confirmation", onSuccess: () => setOpen(false) });
   const fe = a.fieldErrors;
   return (
@@ -140,10 +141,10 @@ export function ReportPaymentDialog({ tenancyId, charges }: { tenancyId: string;
             </Field>
           ) : null}
         </div>
-        <FileUpload kind="payment_proof" tenancyId={tenancyId} max={1} label="Attach receipt or screenshot (optional)" hint="Helps your landlord find the payment. It doesn't confirm the payment by itself." onChange={setProof} />
+        <FileUpload kind="payment_proof" tenancyId={tenancyId} max={1} label="Attach receipt or screenshot (optional)" hint="Helps your landlord find the payment. It doesn't confirm the payment by itself." onChange={setProof} onBusyChange={setUploading} />
         <Field label="Note (optional)" error={fe.note}>{(p) => <Textarea {...p} name="note" rows={2} />}</Field>
         <FormError message={a.error} />
-        <Button type="submit" loading={a.pending}>Send for confirmation</Button>
+        <Button type="submit" loading={a.pending} disabled={uploading}>{uploading ? "Uploading…" : "Send for confirmation"}</Button>
       </form>
     </Dialog>
   );
